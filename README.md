@@ -14,5 +14,5 @@ The following questions are the main subjects which this project focuses on:
 
 These questions will guide our analysis, helping us understand the key financial behaviors impacting credit risk, loan terms, and approval likelihood. Insights from these questions aim to inform risk management and assist lenders in developing data-driven strategies for loan structuring and approval.
 
-Data Source: The dataset, titled Financial Risk for Loan Approval, includes over 20,001 observations and 36 variables, sourced from Kaggle: It can be accessed at [Financial Risk for Loan Approval Dataset](https://www.kaggle.com/datasets/lorenzozoppelletto/financial-risk-for-loan-approval)
+*Data Source:* The dataset, titled Financial Risk for Loan Approval, includes over 20,001 observations and 36 variables, sourced from Kaggle: It can be accessed at [Financial Risk for Loan Approval Dataset](https://www.kaggle.com/datasets/lorenzozoppelletto/financial-risk-for-loan-approval)
 
