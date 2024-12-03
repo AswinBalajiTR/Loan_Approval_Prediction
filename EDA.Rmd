@@ -1,11 +1,26 @@
 ---
-title: "EDA"
-output: html_document
-date: "2024-11-10"
+title: "**Loan Approval Prediction and Analysis**"
+author: "Aswin Balaji Thippa Ramesh,Abilasha Singh, Lixing Pan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    number_sections: false
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Some of common RMD options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis'/'markup',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+knitr::opts_chunk$set(warning = F, message = F)
+# Can globally set option for number display format.
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
 ```
 
 ## R Markdown
@@ -21,19 +36,280 @@ library(tidyr)
 library(reshape2)
 library(gridExtra)
 ```
+# **Data Loading and Basic Exploration:**
 
 ```{r}
 df=read.csv("Loan.csv")
+
+#head
 head(df)
+
+#tail
+tail(df)
+```
+# **Data Types, Schema and Summary:**
+```{r}
+#Shape
+cat("Row Count :",dim(df)[1],", Column Count :",dim(df)[2],'\n\n')
+
+#Structure of the data
+str(df)
+cat('\n\n')
+
+
+#Summary Statistics
+summary(df)
+cat('\n\n')
+
+#Unique value counts in every columns
+for (col in colnames(df)){
+    cat(col, ": ", length(unique(df[[col]])), "\n")
+}
+```
+
+# **Checking Data Quality:**
+```{r}
+#Converting relevvant variables as factor
+df$EmploymentStatus=as.factor(df$EmploymentStatus)
+df$EducationLevel=as.factor(df$EducationLevel)
+df$MaritalStatus=as.factor(df$MaritalStatus)
+df$HomeOwnershipStatus=as.factor(df$HomeOwnershipStatus)
+df$LoanPurpose=as.factor(df$LoanPurpose)
+
+str(df)
 ```
 
 ```{r}
-missing_values <- sapply(df, function(x) sum(is.na(x)))
-missing_values
+#missing values in every columns
+missing_summary <- colSums(is.na(df))
+print(missing_summary)
 ```
+There are no missing values in the data.
+
+```{r}
+#Checking for duplicates
+duplicates <- df[duplicated(df), ]
+print(duplicates)
+```
+No duplicate rows are present in the data
+
+```{r}
+outliers <- lapply(df, function(column) {
+  if (is.numeric(column)) {
+    Q1 <- quantile(column, 0.25)
+    Q3 <- quantile(column, 0.75)
+    IQR <- Q3 - Q1
+    column[column < (Q1 - 1.5 * IQR) | column > (Q3 + 1.5 * IQR)]
+  }
+})
+
+outliers
+
+```
+
 ```{r}
 for (col in colnames(df)) {
   if (is.numeric(df[[col]])) {
     boxplot(df[[col]], main = paste("Boxplot of", col))
 }}
+```
+# **Variable Analysis and Relationship**
+
+1.	What are the strongest predictors of loan approval or rejection?
+
+```{r}
+#correlation matrix
+cor_matrix <- cor(df[, sapply(df, is.numeric)])
+
+# Melt the correlation matrix for plotting
+melted_cor_matrix <- melt(cor_matrix)
+
+# Correlation heatmap
+ggplot(melted_cor_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "green", high = "violet", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),axis.text.y = element_text(vjust = 0, hjust=1))
+
+```
+Annual income,Risk Score, TotalDebtToIncomeRatio, Annual Income and Monthly Income are the highly correlated variables with that of loan approval.
+
+2.	How does debt-to-income ratio impact loan approval, interest rates, and risk scores?
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Calculate correlations
+cor_risk <- cor(df$DebtToIncomeRatio, df$RiskScore, use = "complete.obs")
+cor_interest <- cor(df$DebtToIncomeRatio, df$InterestRate, use = "complete.obs")
+cor_loan <- cor(df$DebtToIncomeRatio, df$LoanApproved, use = "complete.obs")
+
+# Print correlation results
+cat("Correlation with Risk Score:", round(cor_risk, 2), "\n")
+cat("Correlation with Interest Rate:", round(cor_interest, 2), "\n")
+cat("Correlation with Loan Approved:", round(cor_loan, 2), "\n")
+
+# Scatter plots with linear trendlines
+# Risk Score vs Debt-to-Income Ratio
+ggplot(df, aes(x = RiskScore, y = DebtToIncomeRatio)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkblue") +
+  labs(title = "Risk Score vs Debt-to-Income Ratio",
+       x = "Risk Score",
+       y = "Debt-to-Income Ratio") +
+  theme_minimal()
+
+# Interest Rate vs Debt-to-Income Ratio
+ggplot(df, aes(x = InterestRate, y = DebtToIncomeRatio)) +
+  geom_point(color = "red") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  labs(title = "Interest Rate vs Debt-to-Income Ratio",
+       x = "Interest Rate",
+       y = "Debt-to-Income Ratio") +
+  theme_minimal()
+
+#Debt-to-Income Ratio vs Loan Approved
+ggplot(df, aes(x = as.factor(LoanApproved), y = DebtToIncomeRatio)) +
+  geom_bin2d(bins = 50) +  # Increases bin resolution for better detail
+  scale_fill_gradient(low = "#2993ce", high = "pink") +
+  labs(title = "Heatmap of Debt-to-Income Ratio vs Loan Approved",
+       x = "Loan Approved",
+       y = "Debt-to-Income Ratio",
+       fill = "Frequency") +
+  theme_minimal() +
+  scale_x_discrete(labels = c("Approved", "Not Approved"))
+
+
+
+
+# Linear regression models
+# Regression for Risk Score
+model_risk <- lm(DebtToIncomeRatio ~ RiskScore, data = df)
+summary(model_risk)
+
+# Regression for Interest Rate
+model_interest <- lm(DebtToIncomeRatio ~ InterestRate, data = df)
+summary(model_interest)
+
+# Regression for Loan Approved
+model_loan <- lm(DebtToIncomeRatio ~ LoanApproved, data = df)
+summary(model_loan)
+
+# Load necessary library
+library(ggplot2)
+
+# Logistic regression for LoanApproved (binary outcome)
+model_loan <- glm(LoanApproved ~ DebtToIncomeRatio, data = df, family = binomial)
+summary(model_loan)
+
+# Extract odds ratio for better interpretation
+exp(cbind(Odds_Ratio = coef(model_loan), confint(model_loan)))
+```
+3.	What are the financial and demographic profiles of high-risk versus low-risk applicants?
+
+
+```{r}
+# Plot RiskScore vs Age
+ggplot(df, aes(x =RiskScore , y = Age)) +
+  geom_point(aes(color = EmploymentStatus), size = 3) +
+  labs(title = "Risk Score vs Age", x = "Age", y = "Risk Score") +
+  theme_minimal() +
+  scale_color_manual(values = c("Employed" = "grey", "Self-Employed" = "green", "Unemployed" = "#2993ae"))
+
+# Plot RiskScore vs Experience (years)
+ggplot(df, aes(x =RiskScore , y = Experience)) +
+  geom_point(aes(color = EmploymentStatus), size = 3) +
+  labs(title = "Risk Score vs Experience", x = "Experience (Years)", y = "Risk Score") +
+  theme_minimal() +
+  scale_color_manual(values = c("Employed" = "grey", "Self-Employed" = "green", "Unemployed" = "#2993ae"))
+
+# Plot RiskScore by Marital Status
+ggplot(df, aes(x = MaritalStatus, y = RiskScore, color = MaritalStatus)) +
+  geom_boxplot() +
+  labs(title = "Risk Score by Marital Status", x = "Marital Status", y = "Risk Score") +
+  theme_minimal()
+
+# Plot RiskScore vs Employment Status (categorical)
+ggplot(df, aes(x = EmploymentStatus, y = RiskScore, color = EmploymentStatus)) +
+  geom_boxplot() +
+  labs(title = "Risk Score by Employment Status", x = "Employment Status", y = "Risk Score") +
+  theme_minimal()
+
+```
+4.	How does credit score impact interest rates, loan approval, and loan amount?
+```{r}
+# Categorizing Risk Levels
+df$risk_category <- ifelse(df$RiskScore < 40, "Low Risk",
+                                  ifelse(df$RiskScore > 50, "High Risk", "Medium Risk"))
+
+#credit score vs Loan Approved
+ggplot(df, aes(x = as.factor(LoanApproved), y = CreditScore)) +
+  geom_bin2d(bins = 50) +  # Increases bin resolution for better detail
+  scale_fill_gradient(low = "pink", high = "#2993ce") +
+  labs(title = "Heatmap of CreditScore vs Loan Approved",
+       x = "Loan Approved",
+       y = "CreditScore",
+       fill = "Frequency") +
+  theme_minimal() +
+  scale_x_discrete(labels = c("Approved", "Not Approved"))
+
+ggplot(df, aes(x = CreditScore, y = InterestRate)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkblue") +
+  labs(title = "CreditScore vs InterestRate",
+       x = "CreditScore",
+       y = "InterestRate") +
+  theme_minimal()
+
+ggplot(df, aes(x = CreditScore, y = LoanAmount)) +
+  geom_point(color = "green") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "CreditScore vs LoanAmount",
+       x = "CreditScore",
+       y = "LoanAmount") +
+  theme_minimal()
+
+# Summarizing Demographic and Financial Features by Risk Category
+summary_stats <- df %>%
+  group_by(risk_category) %>%
+  summarise(
+    avg_income = mean(AnnualIncome, na.rm = TRUE),
+    avg_loan_amount = mean(LoanAmount, na.rm = TRUE),
+    avg_age = mean(Age, na.rm = TRUE),
+    avg_dependents = mean(NumberOfDependents, na.rm = TRUE),
+    avg_credit_score = mean(CreditScore, na.rm = TRUE)
+  )
+print(summary_stats)
+
+# Credit Score Impact Analysis
+impact_analysis <- df %>%
+  summarise(
+    correlation_interest_rate = cor(CreditScore, InterestRate, use = "complete.obs"),
+    correlation_loan_amount = cor(CreditScore, LoanAmount, use = "complete.obs"),
+    approval_rate_high_score = mean(LoanApproved[CreditScore >= 700], na.rm = TRUE),
+    approval_rate_low_score = mean(LoanApproved[CreditScore < 700], na.rm = TRUE)
+  )
+print(impact_analysis)
+
+```
+
+5.	What is the relationship between loan purpose and repayment behavior, and how does it affect risk?
+```{r}
+# Cross-tabulation of Loan Purpose and LoanApproved
+repayment_behavior <- df %>%
+  group_by(LoanPurpose, risk_category) %>%
+  summarise(
+    avg_repayment_rate = mean(LoanApproved, na.rm = TRUE),
+    avg_interest_rate = mean(InterestRate, na.rm = TRUE),
+    avg_loan_amount = mean(LoanAmount, na.rm = TRUE)
+  )
+print(repayment_behavior)
+
+# Visualizing the relationship (optional)
+library(ggplot2)
+ggplot(repayment_behavior, aes(x = LoanPurpose, y = avg_repayment_rate, fill = risk_category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Repayment Behavior by Loan Purpose and Risk Category", x = "Loan Purpose", y = "Repayment Rate") +
+  theme_minimal()
+
 ```
