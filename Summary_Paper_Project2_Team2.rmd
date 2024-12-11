@@ -1,6 +1,7 @@
 ---
 title: "**Loan Approval Prediction**"
-author: "Abilasha Singh, Aswin Balaji Thippa Ramesh, Lixing Pan"
+author: "Authors:Abhilasha Singh, Aswin Balaji Thippa Ramesh, Lixing Pan"
+date: "`r Sys.Date()`"
 output:
   html_document:
     code_folding: hide
@@ -16,4 +17,707 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = F, message = F)
 options(scientific=T, digits = 3) 
+library(dplyr)
+library(ezids)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(gridExtra)         
+library(caret)         
+library(DataExplorer)  
+library(ROCR)          
+library(lubridate)
+library(ggpubr)
 ```
+
+# **Executive Summary**</br>
+
+This project aims to analyze how various applicant and loan-related factors influence loan approval decisions. We will explore applicant profiles, focusing on key variables such as credit score, annual income, employment status, debt-to-income ratio,along with loan-specific details like interest rate, loan amount, and risk score. By identifying patterns and correlations within a dataset of 20,000 records, which includes demographic information, credit history, and income levels, we aim to gain valuable insights. The dataset serves two primary purposes: Risk Score Regression, which predicts an individual’s likelihood of loan default or financial instability, and Binary Classification, which determines whether an applicant is likely to be approved or denied for a loan. While both objectives are important, our primary focus will be on the binary classification for loan approval prediction.</br>
+
+# **Data Overview and Limitations**</br>
+## Dataset Description:
+
+The dataset used for this analysis is sourced from the Kaggle. We have synthetic dataset comprising of  20,000 records of personal and financial data, designed to facilitate the development of predictive models for risk assessment.The following table provides definitions for each variable in the dataset:
+
+|**Variable**              | **Definition**                                                                 |
+|--------------------------|--------------------------------------------------------------------------------|
+| ApplicationDate          | The date when the loan application was submitted.                              |
+| Age                      | The age of the applicant.                                                     |
+| AnnualIncome             | The yearly income of the applicant.                                            |
+| CreditScore              | The creditworthiness score of the applicant.                                   |
+| EmploymentStatus         | The applicant's current employment situation.                                  |
+| EducationLevel           | The highest level of education attained by the applicant.                     |
+| Experience               | The work experience of the applicant.                                          |
+| LoanAmount               | The amount of loan requested by the applicant.                                 |
+| LoanDuration             | The repayment period for the loan.                                             |
+| MaritalStatus            | The marital status of the applicant.                                           |
+| NumberOfDependents       | The number of dependents the applicant is financially responsible for.         |
+| HomeOwnershipStatus      | The type of homeownership (e.g., owned, rented) of the applicant.              |
+| MonthlyDebtPayments      | The monthly amount the applicant needs to pay for existing debts.              |
+| CreditCardUtilizationRate| The percentage of the applicant's credit card limit that is being used.       |
+| NumberOfOpenCreditLines  | The number of active credit lines the applicant holds.                         |
+| NumberOfCreditInquiries  | The total number of credit inquiries made by the applicant.                    |
+| DebtToIncomeRatio        | The ratio of the applicant's debt to their income.                             |
+| BankruptcyHistory        | The history of bankruptcy filings by the applicant.                           |
+| LoanPurpose              | The reason the applicant is applying for the loan.                            |
+| PreviousLoanDefaults     | Whether the applicant has defaulted on previous loans.                         |
+| PaymentHistory           | The applicant's past behavior in making payments.                              |
+| LengthOfCreditHistory    | The duration of the applicant's credit history.                               |
+| SavingsAccountBalance    | The balance in the applicant's savings account.                                |
+| CheckingAccountBalance   | The balance in the applicant's checking account.                               |
+| TotalAssets              | The total value of the applicant's assets.                                     |
+| TotalLiabilities         | The total value of the applicant's liabilities.                                |
+| MonthlyIncome            | The applicant's monthly income.                                               |
+| UtilityBillsPaymentHistory| The applicant's history of utility bill payments.                            |
+| JobTenure                | The length of time the applicant has been employed at their current job.       |
+| NetWorth                 | The applicant's total financial worth.                                         |
+| BaseInterestRate         | The starting interest rate applied to the loan.                               |
+| InterestRate             | The actual interest rate applied to the loan.                                 |
+| MonthlyLoanPayment       | The monthly payment amount for the loan.                                       |
+| TotalDebtToIncomeRatio   | The total debt relative to the applicant's income.                             |
+| LoanApproved             | The approval status of the loan (whether it is approved or denied).           |
+| RiskScore                | The risk assessment score assigned to the applicant.                           |
+
+## Summary of the dataset:
+```{r}
+df=read.csv("Loan.csv")
+str(df)
+```
+
+## Data Limitation:
+
+Its a synthetic data created through algorithms or simulations rather than being collected from actual events or observations.
+
+# **Smart Questions**</br>
+
+Our primary focus will be on the binary classification for loan approval prediction,which determines which variables are is likely to contibute for loan approved.
+
+1.	What are the financial and demographic profiles of high-risk versus low-risk applicants for loan approval?
+2.	How does debt-to-income ratio impact loan approval, interest rates, and risk scores?
+3.	What is the relationship between loan purpose and repayment behavior, and how does it affect risk?
+4.	How does credit score impact interest rates, loan approval, and loan amount?
+5.	What are the strongest predictors of loan approval or rejection?
+
+# **Data Cleaning** </br>
+
+## Handling Missing Values:
+Missing values can compromise the integrity of the dataset.If certain features are missing, the model might not learn properly, leading to suboptimal performance.
+```{r}
+# Check for missing values in every column
+missing_summary <- colSums(is.na(df))
+
+# Check if there are no missing values
+if (all(missing_summary == 0)) {
+  cat("There are no missing values present in the data.\n")
+
+} else {
+  cat("Missing values are present in the data. Please handle them before proceeding.\n")
+}
+```
+**Key Observations:**</br>
+The dataset is complete, with no missing entries in any of the variables. This ensures that we can perform our analysis without the need for imputation or removal of any data points, preserving the integrity of the dataset.
+
+## Handling Duplicate Values:
+Duplicates can bias statistical analysis and lead to overemphasis on certain data points.Removing duplicates improves computational efficiency and makes algorithms run faster.
+```{r}
+# Check for duplicate rows
+duplicates_count <- sum(duplicated(df))  # Count of duplicate rows
+
+# Display message based on the presence of duplicate rows
+if (duplicates_count == 0) {
+  cat("There are no duplicate rows present in the data.\n")
+} else {
+  cat("Total duplicate rows:", duplicates_count, "\n")
+  # Optionally display duplicate rows
+  print(df[duplicated(df), ])
+}
+```
+**Key Observations:**</br>
+There are no repeated records in the dataset, meaning each observation is unique. This is crucial to ensure that the analysis is not skewed by redundant data, leading to accurate and reliable results.
+
+## Handling Data Type:
+To analyze the dataset and extract insights, certain categorical data needed to be converted into factors.
+
+The first 2 rows from the data frame:
+```{r}
+#Converting relevvant variables as factor
+df$EmploymentStatus=as.factor(df$EmploymentStatus)
+df$EducationLevel=as.factor(df$EducationLevel)
+df$MaritalStatus=as.factor(df$MaritalStatus)
+df$HomeOwnershipStatus=as.factor(df$HomeOwnershipStatus)
+df$LoanPurpose=as.factor(df$LoanPurpose)
+df$BankruptcyHistory <- as.factor(df$BankruptcyHistory)
+
+# Categorize Risk into Low, Medium, and High groups based on quantiles
+df$RiskGroup <- cut(
+  df$RiskScore,
+  breaks = quantile(df$RiskScore, probs = c(0, 0.4, 1), na.rm = TRUE),
+  labels = c("Low Risk", "High Risk"),
+  include.lowest = TRUE
+)
+
+# Convert RiskGroup to a factor
+df$RiskGroup <- factor(df$RiskGroup, levels = c("Low Risk", "High Risk"))
+
+head(df, 2)
+```
+
+**Adding Riskgroup Variable:**</br>
+The purpose of categorizing the RiskScore into "Low Risk" and "High Risk" groups is likely to simplify risk assessment and decision-making in the context of loan approval or financial analysis.Low Risk category includes all RiskScore values from the minimum to the 40th percentile i.e.(0-40%).High Risk  category includes all RiskScore values from the 40th percentile to the maximum value (i.e., 40%-100%).
+
+## Handling Outliers:
+Handling outliers is essential to ensure model accuracy, prevent overfitting or underfitting, and maintain reliable statistical analysis. Among the 36 variables, credit score stands out as a key predictor, which is why we have selected it for the analysis.
+
+
+```{r}
+# Boxplot for detecting outliers in numerical features (example for AnnualIncome)
+ggplot(df, aes(x = "", y = CreditScore)) +
+  geom_boxplot(fill = "skyblue", color = "black") +
+  theme_minimal() +
+  labs(title = "Boxplot for Credit Score")
+```
+
+**Key Observations:**</br>
+In our dataset, outliers should be retained because they represent significant and varied applicant behaviors, which are essential for accurately capturing the full spectrum of financial risk. This helps improve the loan approval process by ensuring that analysis and models take into account all potential risk factors. For instance, the credit score is a key predictor. Outliers in credit scores, particularly extreme low values, are valuable data points. These outliers are crucial as they offer insights into the lower end of the creditworthiness spectrum, enabling financial institutions to better assess the risk associated with loan applicants. Low credit scores indicate high risk and a reduced chance of loan approval. Instead of removing these outliers, they should be retained, as they play a vital role in making informed and accurate credit decisions. 
+
+# **Exploratory Analysis**</br>
+
+## Univariate Analysis:
+
+```{r}
+
+# Convert ApplicationDate to Date type
+df$ApplicationDate <- as.Date(df$ApplicationDate, format="%Y-%m-%d")  # Adjust format if needed
+
+# Handle missing values by imputing or removing (choose according to your dataset)
+df <- na.omit(df)  # For simplicity, we omit rows with missing values
+
+# 3. Visualizing numerical variables
+# Plot distribution of numerical features
+numerical_features <- c("Age", "AnnualIncome", "CreditScore", "Experience", 
+                        "LoanAmount", "LoanDuration", "MonthlyDebtPayments", 
+                        "CreditCardUtilizationRate", "NumberOfOpenCreditLines", 
+                        "NumberOfCreditInquiries", "DebtToIncomeRatio", 
+                        "TotalLiabilities", "MonthlyIncome", "NetWorth", 
+                        "BaseInterestRate", "InterestRate", "MonthlyLoanPayment", 
+                        "TotalDebtToIncomeRatio", "RiskScore")
+
+# Histogram for all numerical variables
+selected_features <- c("AnnualIncome", "CreditScore")
+df %>% 
+  select(selected_features) %>% 
+  gather(key = "Variable", value = "Value") %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  facet_wrap(~Variable, scales = "free_x", ncol = 1) +  # Display variables in separate rows
+  theme_minimal() +
+  labs(title = "Distribution of Annual Income and Credit Score")
+```
+
+**Key Observations:**</br>
+No severe skewness.
+
+## Bivariate Analysis:
+Bivariate analysis is essential for understanding the relationship between two variables, aiding in feature selection, model development, and hypothesis formulation. Since our target variable is Loan Approval, we focused on exploring the relationship between Loan Approval and Risk Score to better inform our analysis.
+```{r}
+#Checking RiskScore distribution and its relationship with LoanApproval
+ggplot(df, aes(x = RiskScore, fill = factor(LoanApproved, labels = c("Not Approved", "Approved")))) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  theme_minimal() +
+  labs(title = "Risk Score Distribution by Loan Approval", fill = "Loan Approval Status")
+```
+
+**Key Observations:**</br>
+As observed in the graph, higher risk scores (above 50) show a significant number of loan rejections, while lower risk scores (ranging from 20 to 40) have a much higher volume of loan approvals. Loans are more likely to be approved for individuals with lower risk scores, as these applicants are seen as less likely to fail to repay. Lenders often view low-risk individuals as more financially stable and trustworthy, increasing their chances of loan approval.
+
+
+## Multivariate Analysis
+
+Analyzing multiple variables simultaneously through multivariate analysis enhances the accuracy of models, uncovers hidden patterns, and supports more informed decision-making. In this context, we are examining the relationship between our target variable (Loan Approval) and other relevant variables, such as Risk Score, Annual Income, Debt-to-Income Ratio, and Age. By understanding how these factors interact and contribute together to loan approval decisions, we can improve the predictive power and reliability of our model.
+
+```{r}
+#correlation matrix
+cor_matrix <- cor(df[, sapply(df, is.numeric)])
+
+# Melt the correlation matrix for plotting
+melted_cor_matrix <- melt(cor_matrix)
+
+# Correlation heatmap
+ggplot(melted_cor_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "green", high = "violet", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),axis.text.y = element_text(vjust = 0, hjust=1))
+```
+
+**Key Observations:**</br>
+Since our target variable is Loan Approval, the correlation matrix reveals that variables such as Annual Income, Risk Score, and Debt-to-Income Ratio are strongly correlated with loan approval. These factors are crucial indicators of an applicant's ability to repay the loan, and therefore, we will use them for model evaluation. By incorporating these highly correlated variables, we aim to improve the accuracy of the loan approval prediction model.
+
+## Multicollinearity
+Multicollinearity can lead to unreliable, biased, and difficult-to-interpret models. Detecting and addressing it early in the modeling process is essential to ensure accurate predictions and meaningful insights. In our analysis, we have utilized both the Correlation Matrix and Variance Inflation Factor (VIF) to identify and address multicollinearity, ensuring the robustness of our model and its predictive power.
+```{r}
+# Function to identify and drop multicollinear columns
+drop_multicollinear <- function(df, threshold = 0.85) {
+  # Select only numeric columns
+  numeric_data <- df %>% select_if(is.numeric)
+  
+  # Compute correlation matrix
+  correlation_matrix <- cor(numeric_data, use = "pairwise.complete.obs")
+  
+  # Find highly correlated features
+  high_corr_indices <- findCorrelation(correlation_matrix, cutoff = threshold)
+  columns_to_drop <- colnames(numeric_data)[high_corr_indices]
+  
+  print(paste("Dropping multicollinear columns using correlation matrix:", paste(columns_to_drop, collapse = ", ")))
+  
+  # Drop multicollinear columns
+  df <- df %>% select(-all_of(columns_to_drop))
+  return(df)
+}
+
+# Apply the function
+df <- drop_multicollinear(df, threshold = 0.85)
+df <- df %>% select(-TotalDebtToIncomeRatio)
+
+```
+
+**Key Observations:**</br>
+After checking the Variance Inflation Factor (VIF) scores, we found that some variables had a VIF value greater than 10, indicating multicollinearity. As a result, we decided to drop these columns to improve model stability. The dropped columns were:</br>
+MonthlyIncome</br>
+Experience</br>
+NetWorth</br>
+
+In the correlation matrix as well we observed that:</br>
+
+MonthlyIncome can be derived by dividing Annual Income by 12, so it was deemed redundant.
+Experience can be approximated using the Age variable, as experience often correlates with age.
+NetWorth can be calculated from the total Assets column, making it unnecessary to include both.</br>
+
+By dropping these columns, we reduce multicollinearity and simplify the model, while still retaining important information.
+
+# **Smart Questions Analysis**</br>
+
+## Question 1.
+
+### What are the financial and demographic profiles of high-risk versus low-risk applicants for loan approval?
+
+High-risk loan applicants often have lower or inconsistent income, short or unstable employment histories, limited assets, and may be younger or older with less financial stability. They may also be unmarried or in non-stable marital situations, which can affect financial security. In contrast, low-risk applicants typically have higher, consistent income, stable, long-term employment, significant assets, and are often middle-aged with more financial experience. They may also have a stable marital status, contributing to overall financial stability, making them more likely to repay loans.
+
+Initially, we will examine the role of age in loan approval decisions using violin plot to understand how it influences the likelihood of approval for high-risk and low-risk applicants.
+```{r}
+# Age: Violin Plot
+ggplot(df, aes(x = RiskGroup, y = Age, fill = RiskGroup)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, position = position_dodge(0.9), color = "black", alpha = 0.6) +
+  labs(title = "Age Distribution by Risk Group", x = "Risk Group", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+cat("Conclusion: Age is almost uniformly distributed among both risk groups.\n")
+```
+
+Next, we will examine the relationship between Total Assets and Loan Approvalusing Scatter Plot with Smoothing to understand how an applicant's total asset value impacts their likelihood of being approved for a loan, particularly in relation to their risk profile.
+```{r}
+# Total Assets: Scatter Plot with Smoothing
+ggplot(df, aes(x = RiskGroup, y = TotalAssets, color = RiskGroup)) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  geom_boxplot(width = 0.1, alpha = 0.7, outlier.shape = NA) +
+  labs(title = "Total Assets by Risk Group", x = "Risk Group", y = "Net Worth") +
+  theme_minimal() +
+  theme(legend.position = "none")
+cat("Conclusion: Low-risk applicants have significantly higher Total Assets compared to high-risk applicants, with greater variability in the low-risk group.\n")
+```
+
+Now, we will use a density plot to visualize the distribution of Annual Income across different Risk Groups (Low Risk and High Risk). This will help us understand how income levels vary between these groups and whether income plays a significant role in determining an applicant's risk profile
+
+```{r}
+# Income: Density Plot
+ggplot(df, aes(x = AnnualIncome, fill = RiskGroup)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Income Distribution by Risk Group", x = "Annual Income", y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(labels = scales::dollar_format())
+cat("Conclusion: Low-risk applicants have higher & wider income. While high-risk applicants, have lower incomes.\n")
+```
+
+Next, we will analyze the effect of Marital Status on loan approval by using a grouped bar chart. This visualization will allow us to compare approval rates across different marital status categories (e.g., Single, Married) and observe any significant trends or patterns.
+```{r}
+
+## Marital Status: Grouped Bar Chart
+ggplot(df, aes(x = RiskGroup, fill = MaritalStatus)) +
+  geom_bar(position = "dodge", alpha = 0.8) +
+  labs(title = "Marital Status Distribution by Risk Group", x = "Risk Group", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "top")
+cat("Conclusion: High-risk applicants have higher proportions of all the marital status,suggesting no significance.\n")
+```
+
+Finally, we will use a bar plot to analyze the relationship between Employment Status and Risk Score. This visualization will help us identify how different employment categories (e.g., Employed, Self-Employed, Unemployed) correlate with risk levels, providing insights into their influence on loan approval decisions.
+```{r}
+# Plot RiskScore vs Employment Status (categorical)
+ggplot(df, aes(x = EmploymentStatus, y = RiskScore, color = EmploymentStatus)) +
+  geom_boxplot() +
+  labs(title = "Risk Score by Employment Status", x = "Employment Status", y = "Risk Score") +
+  theme_minimal()
+cat("Conclusion: Applicants who are employed have lower risk score. While unemployed and self-employed  applications have slightly higher risk score.\n")
+```
+
+**Key Observations:**</br>
+
+The age distribution is nearly uniform across both risk groups, showing no significant differentiation in loan approval based on age. Financially, low-risk applicants, who are more likely to receive loan approval, possess significantly higher total assets with greater variability compared to high-risk applicants. Similarly, low-risk applicants demonstrate higher and more varied income levels, aligning with their higher approval rates, while high-risk applicants generally have lower incomes and are less likely to be approved. Marital status does not appear to significantly influence risk or approval rates, as high-risk applicants are proportionately distributed across all marital categories. Employment status, however, is a notable factor employed individuals exhibit lower risk scores and higher approval rates, while unemployed and self-employed applicants show slightly higher risk scores, reducing their chances of approval.
+
+
+## Question 2.
+### How does debt-to-income ratio impact loan approval, interest rates, and risk scores?
+
+Lenders use the debt-to-income (DTI) ratio to assess a borrower’s ability to manage additional debt. A high DTI ratio may lead to loan denial, while a lower DTI is viewed more favorably. Borrowers with a lower DTI often receive lower interest rates due to lower perceived risk. Although DTI doesn't directly impact credit scores, it influences the overall risk assessment. A high DTI can lower a borrower's risk profile and, in turn, their risk score, reducing the chances of receiving favorable loan terms or approval.
+
+Initially, we will start the analysis with the debt-to-income (DTI) ratio's impact on loan approval.
+```{r}
+# Create a new dataframe for analysis
+df_analysis <- df
+
+# Ensure LoanApproved in the new dataframe is labeled as "Rejected" and "Approved"
+df_analysis$LoanApproved <- factor(df_analysis$LoanApproved, labels = c("Rejected", "Approved"))
+
+# Bin Debt-to-Income Ratio for grouping in the new dataframe
+df_analysis$DebtToIncomeBin <- cut(df_analysis$DebtToIncomeRatio, 
+                                   breaks = c(-Inf, 0.2, 0.4, 0.6, 0.8, Inf),
+                                   labels = c("Very Low", "Low", "Moderate", "High", "Very High"))
+# Analysis and Visualizations
+## 1. Impact on Loan Approval
+library(ggplot2)
+ggplot(df_analysis, aes(x = DebtToIncomeBin, fill = LoanApproved)) +
+  geom_bar() +
+  labs(title = "Loan Approval by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Proportion of Loan Approvals") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Rejected" = "pink", "Approved" = "darkblue"))
+
+cat("The debt-to-income ratio, as shown in the plot, does not appear to have much significance. Applicants with a low debt-to-income ratio have more loan rejections than approvals. \n")
+cat("We are further using the logistic regression model to verify the significant relation between these variables\n")
+# Model 1: Debt-to-Income Ratio vs Loan Approval
+loan_approval_model <- glm(LoanApproved ~ DebtToIncomeRatio, data = df_analysis, family = "binomial")
+approval_summary <- summary(loan_approval_model)
+approval_coef <- approval_summary$coefficients[2, 1]
+approval_p <- approval_summary$coefficients[2, 4]
+
+
+# Loan Approval Proof
+print(approval_summary)
+if (approval_p < 0.05) {
+  cat("Conclusion: Debt-to-Income Ratio negatively affects loan approval (coefficient =", round(approval_coef, 2), 
+      ", p =", round(approval_p, 5), "). Higher DTI reduces loan approval chances.\n")
+} else {
+  cat("Conclusion: Debt-to-Income Ratio does not significantly affect on loan approval,p-value associated with the coefficient(0.000501) is 1, which is much higher than 0.05.The Null deviance (21997) and Residual deviance (21997) are nearly identical and AIC (22001) value is also relatively high, which suggests that the model is not a particularly good fit.\n")
+}
+```
+
+Next, we will examine the impact of the debt-to-income ratio on interest rates.
+```{r}
+## 2. Impact on Interest Rates
+ggplot(df_analysis, aes(x = DebtToIncomeBin, y = InterestRate, fill = DebtToIncomeBin)) +
+  geom_boxplot() +
+  labs(title = "Interest Rates by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Interest Rate") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+cat("The plot shows no significant relationship between the debt-to-income ratio and interest rates. Only in cases of very high debt-to-income ratios is there a minimal change in interest rates, while there is no noticeable change for most other ratios.\n")
+cat("To verify this we are using the linear regression model to find the significant relation between these variables\n")
+
+# Model 2: Debt-to-Income Ratio vs Interest Rates
+interest_rate_model <- lm(InterestRate ~ DebtToIncomeRatio, data = df_analysis)
+interest_summary <- summary(interest_rate_model)
+interest_coef <- interest_summary$coefficients[2, 1]
+interest_p <- interest_summary$coefficients[2, 4]
+
+print(interest_summary)
+if (interest_p < 0.05) {
+  cat("Conclusion: Higher Debt-to-Income Ratio is associated with higher interest rates (coefficient =", round(interest_coef, 2), 
+      ", p =", round(interest_p, 5), ").\n")
+} else {
+  cat("Conclusion: The analysis reveals a very weak negative relationship between the debt-to-income ratio and interest rates, with a coefficient of -0.00161. However, the p-value of 0.39 indicates that this relationship is not statistically significant. While the intercept is highly significant, the model explains very little of the variation in interest rates, as reflected by the low R-squared value of 3.73e-05. Additionally, the F-statistic of 0.746 with a p-value of 0.388 suggests that the model does not significantly account for changes in interest rates.\n")
+}
+```
+
+Finally, we will examine the impact of the debt-to-income ratio on risk scores.
+```{r}
+## 3. Impact on Risk Scores
+ggplot(df_analysis, aes(x = DebtToIncomeBin, y = RiskScore, fill = DebtToIncomeBin)) +
+  geom_boxplot() +
+  labs(title = "Risk Scores by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Risk Score") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+cat("The plot shows a significant relationship between the debt-to-income ratio and risk scores. As the debt-to-income ratio increases, the risk score also rises. This trend is evident in the box plot, where the median values of the risk scores increase from low to high debt-to-income ratios.\n")
+cat("To confirm if there is the significant relation between these variables we are using the linear regression model to verify.s\n")
+
+# Model 3: Debt-to-Income Ratio vs Risk Scores
+risk_score_model <- lm(RiskScore ~ DebtToIncomeRatio, data = df_analysis)
+risk_summary <- summary(risk_score_model)
+risk_coef <- risk_summary$coefficients[2, 1]
+risk_p <- risk_summary$coefficients[2, 4]
+
+print(risk_summary)
+if (risk_p < 0.05) {
+  cat("Conclusion: Higher Debt-to-Income Ratio is associated with higher risk scores (coefficient =", round(risk_coef, 2), 
+      ", p =", round(risk_p, 5), ").\n")
+} else {
+  cat("Conclusion: The linear regression analysis reveals a significant positive relationship between the debt-to-income (DTI) ratio and risk scores. For each unit increase in the DTI ratio, the risk score increases by approximately 15.85 points with p-values less than 2e-16., indicating that higher DTI ratios are associated with higher risk scores. The model explains 10.7% of the variation in risk scores, as indicated by an R-squared value of 0.107. The F-statistic (2.39e+03) and a p-value of less than 2e-16 confirm that the model is highly significant.\n")
+}
+
+```
+
+**Key Observations:**</br>
+
+The analysis indicates that the Debt-to-Income (DTI) ratio has no significant impact on loan approval or interest rates. The p-value for the DTI coefficient in loan approval is 1, well above the 0.05 threshold, and the Null and Residual deviance are nearly identical, suggesting a poor model fit. Similarly, the relationship between DTI and interest rates is weak, with a coefficient of -0.00161 and a p-value of 0.39, indicating no significant effect. However, a significant positive relationship is observed between DTI and risk scores, where each unit increase in DTI results in a 15.85-point increase in the risk score, explaining 10.7% of the variance.This implies that as risk scores, which may reflect financial instability, rise, there is a corresponding increase in the DTI ratio.
+
+## Question 3.
+### What is the relationship between loan purpose and repayment behavior, and how does it affect risk?
+
+The relationship between loan purpose and repayment behavior affects risk. Secured loans, like mortgages, are generally lower-risk, while unsecured loans for discretionary purposes carry higher risk. Borrowers may prioritize secured loans in financial hardship, influencing repayment behavior. Loan purpose helps lenders assess risk and the likelihood of repayment.
+
+**Key Observations:**</br>
+
+## Question 4.
+### How does credit score impact interest rates, loan approval, and loan amount?
+
+Credit scores are crucial as they reflect a borrower’s financial responsibility and ability to repay debt. Higher scores signal reliability, leading to better loan terms, lower interest rates, and larger loan amounts. Conversely, lower scores suggest higher risk, often resulting in higher rates, stricter approval criteria, and smaller loan amounts.
+
+Let’s begin by exploring how credit scores affect interest rates.
+```{r}
+
+# 1. Credit Score vs Interest Rate
+cor_test <- cor.test(df$CreditScore, df$InterestRate)
+# Visualization: Credit Score vs Interest Rate with Conditional Coloring
+ggplot(df, aes(x = CreditScore, y = InterestRate)) +
+  geom_point(aes(color = InterestRate), alpha = 0.6, size = 2) +  # Points colored by Interest Rate
+  scale_color_gradient(low = "blue", high = "red") +  # Gradient color for emphasis
+  geom_smooth(method = "lm", color = "black", linetype = "dashed", se = TRUE) +  # Regression line
+  labs(
+    title = paste("Credit Score vs Interest Rate\n",
+                  "Correlation: ", round(cor_test$estimate, 2),
+                  "| p-value:", round(cor_test$p.value, 5)),
+    x = "Credit Score",
+    y = "Interest Rate",
+    color = "Interest Rate"
+  ) +
+  theme_minimal()
+cat("The plot highlights a significant relationship where higher credit scores correspond to lower interest rates,demonstrating that as credit scores rise, interest rates decline.\n")
+cat("Next, a linear regression model is employed to confirm the significant relationship between these variables.\n")
+
+interest_rate_model <- lm(InterestRate ~ CreditScore, data = df)
+interest_summary <- summary(interest_rate_model)
+interest_coef <- interest_summary$coefficients[2, 1]
+interest_p <- interest_summary$coefficients[2, 4]
+
+print(interest_summary)
+if (interest_p < 0.05) {
+  cat("Conclusion: Higher credit scores are associated with lower interest rates (coefficient =", round(interest_coef, 2), 
+      ", p =", round(interest_p, 5), ").\n")
+} else {
+  cat("Conclusion:The linear regression analysis reveals a significant negative relationship between credit scores and interest rates. With a coefficient of -0.000496, each unit increase in credit score corresponds to a decrease of approximately 0.000496 in interest rates. The p-value (<2e-16) confirms statistical significance, and the model explains 35.9% of the variance in interest rates (R-squared = 0.359). The F-statistic (1.12e+04, p-value <2e-16) highlights the model's overall significance. The residual standard error (0.0338) indicates low deviation, supporting the model's reliability. Overall, higher credit scores are strongly associated with lower interest rates, emphasizing their importance in lending decisions.\n")
+}
+```
+
+Next, we will explore the impact of Credit Score on Loan Approval.
+```{r}
+# 2. Credit Score vs Loan Approval
+t_test_approval <- t.test(CreditScore ~ LoanApproved, data = df)
+# Visualization: Credit Score by Loan Approval
+ggplot(df_analysis, aes(x = LoanApproved, y = CreditScore, fill = LoanApproved)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(title = paste("Credit Score by Loan Approval\n",
+                     "p-value:", round(t_test_approval$p.value, 5)),
+       x = "Loan Approval Status", y = "Credit Score") +
+  theme_minimal() +
+  theme(legend.position = "none")
+cat("The plot demonstrates that higher credit scores substantially enhance the likelihood of loan approval. As shown in the boxplot, applicants with higher credit scores are more likely to have their loans approved compared to those with lower scores.\n")
+cat("Lets perform the logistic regression model to verify the significant relation between these variables\n")
+loan_approval_model <- glm(LoanApproved ~ CreditScore, data = df, family = "binomial")
+approval_summary <- summary(loan_approval_model)
+approval_coef <- approval_summary$coefficients[2, 1]
+approval_p <- approval_summary$coefficients[2, 4]
+
+print(approval_summary)
+if (approval_p < 0.05) {
+  cat("Conclusion: Higher credit scores increase the likelihood of loan approval (coefficient =", round(approval_coef, 2), 
+      ", p =", round(approval_p, 5), ").\n")
+} else {
+  cat("Conclusion: The logistic regression analysis shows a significant positive relationship between credit scores and loan approval likelihood. Each one-point increase in credit score raises the log odds of approval by 0.007054, with a highly significant p-value (<2e-16). The model demonstrates improved fit, as indicated by a decrease in residual deviance (21574 vs. null deviance 21997) and an AIC of 21578. These results confirm that applicants with higher credit scores are significantly more likely to have their loans approved.\n")
+}
+```
+
+Finally, let's examine the impact of credit score on the loan amount.
+```{r}
+# 3. Credit Score vs Loan Amount
+
+# Statistical Test: Correlation
+cor_loan <- cor.test(df$CreditScore, df$LoanAmount)
+
+# Visualization: Credit Score vs Loan Amount
+ggplot(df, aes(x = CreditScore, y = LoanAmount)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_smooth(method = "lm", color = "red", se = TRUE) +
+  labs(title = paste("Credit Score vs Loan Amount\n",
+                     "Correlation: ", round(cor_loan$estimate, 2), 
+                     "| p-value:", round(cor_loan$p.value, 5)),
+       x = "Credit Score", y = "Loan Amount") +
+  theme_minimal()
+cat("The plot shows that credit score has minimal impact on loan amounts. As credit scores increase, loan amounts tend to remain consistent, and the relationship between the two variables does not appear to be significant.\n")
+cat("To further verify our analysis we are using the linear regression model to find the significant relation between these variables\n")
+loan_amount_model <- lm(LoanAmount ~ CreditScore, data = df)
+loan_amount_summary <- summary(loan_amount_model)
+loan_amount_coef <- loan_amount_summary$coefficients[2, 1]
+loan_amount_p <- loan_amount_summary$coefficients[2, 4]
+
+print(loan_amount_summary)
+if (loan_amount_p < 0.05) {
+  cat("Conclusion: Higher credit scores are associated with higher loan amounts (coefficient =", round(loan_amount_coef, 2), 
+      ", p =", round(loan_amount_p, 5), ").\n")
+} else {
+  cat("Conclusion:The linear regression results show that the credit score has minimal impact on loan amounts. The coefficient for credit score is -2.85, indicating a slight negative relationship, but the p-value of 0.13 is above the 0.05 significance threshold, meaning this relationship is not statistically significant. The intercept is highly significant with a p-value of <2e-16. The R-squared value is very low (0.000117), suggesting that the model explains almost none of the variation in loan amounts. The F-statistic of 2.35 with a p-value of 0.126 further indicates that the model does not significantly explain variations in loan amounts.\n")
+}
+
+```
+
+**Key Observations:**</br>
+
+The analysis highlights significant relationships between credit scores, interest rates, and loan approval, but shows minimal impact on loan amounts. Higher credit scores are strongly associated with lower interest rates, with a coefficient of -0.000496 and a highly significant p-value (<2e-16), explaining 35.9% of the variance in interest rates. Logistic regression analysis indicates that credit scores positively influence loan approval, with each increase in score enhancing the likelihood of approval (coefficient = 0.007054, p-value <2e-16). The model fit improves with reduced deviance and an AIC of 21578. However, the relationship between credit scores and loan amounts is minimal and not statistically significant, as indicated by the coefficient (-2.85), p-value (0.13), low R-squared (0.000117), and F-statistic (2.35, p-value = 0.126).
+
+## Question 5.
+### What are the strongest predictors of loan approval or rejection?
+
+The strongest predictors of loan approval or rejection include factors such as credit score, which indicates financial responsibility, and debt-to-income ratio (DTI), reflecting the borrower’s ability to manage debt. Income level and employment history also play a key role in demonstrating financial stability. Additionally, the loan amount requested and existing debt load impact the decision, with larger loans and high existing debt reducing approval chances. These factors help lenders assess the borrower’s repayment ability and overall risk.</br>
+
+Let's identify the strongest predictors by constructing models, splitting the data into training and testing sets, employing feature selection methods, and utilizing both decision trees and generalized linear models.
+
+# **Model Building & Evaluation**</br>
+
+## Splitting the data
+First of all we will be splitting data into training and testing sets (80-20 split).
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(caret)
+
+# Split data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Create a data frame for visualization
+split_data <- data.frame(
+  Set = c("Training Set", "Testing Set"),
+  Count = c(nrow(train_data), nrow(test_data))
+)
+
+# Plot the split
+ggplot(split_data, aes(x = Set, y = Count, fill = Set)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Data Split: Training vs Testing Set", y = "Number of Records", x = "Data Set") +
+  scale_fill_manual(values = c("blue", "seagreen")) +
+  theme_minimal()
+```
+
+## Feature Selection 
+
+### Recursive Feature Elimination (RFE) 
+
+**Key Observations:**</br>
+
+## Model 1 
+
+### Logistic Regression Model 
+
+```{r}
+# Ensure the target variable is a factor
+df$LoanApproved <- as.factor(df$LoanApproved)
+
+# Select only the columns needed for the model, including the target variable
+selected_columns <- c("LoanApproved", "RiskScore", "AnnualIncome", "DebtToIncomeRatio", 
+                      "LoanAmount", "InterestRate","BankruptcyHistory", "CreditScore", "MonthlyLoanPayment", "PreviousLoanDefaults")
+
+df <- df[, selected_columns]
+
+# Split the data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Define the formula for the logistic regression model
+formula <- LoanApproved ~ RiskScore + AnnualIncome + DebtToIncomeRatio + LoanAmount + + InterestRate + BankruptcyHistory + CreditScore + MonthlyLoanPayment + PreviousLoanDefaults
+# Build the logistic regression model on the training data
+logistic_model <- glm(formula, data = train_data, family = "binomial")
+
+# Summarize the model
+summary(logistic_model)
+
+
+# Predict probabilities on the test dataset
+predicted_probabilities <- predict(logistic_model, newdata = test_data, type = "response")
+
+# Convert probabilities to binary outcomes (threshold = 0.5)
+predicted_classes <- ifelse(predicted_probabilities > 0.5, "1", "0")
+
+# Ensure the predicted classes and actual values have the same factor levels
+predicted_classes <- factor(predicted_classes, levels = levels(test_data$LoanApproved))
+
+# Create a confusion matrix
+conf_matrix <- confusionMatrix(predicted_classes, test_data$LoanApproved)
+
+# Print the confusion matrix and performance metrics
+print(conf_matrix)
+
+# Extract performance metrics
+accuracy <- conf_matrix$overall['Accuracy']
+sensitivity <- conf_matrix$byClass['Sensitivity']
+specificity <- conf_matrix$byClass['Specificity']
+
+# Print performance summary
+cat("Accuracy: ", round(accuracy, 2), "\n")
+cat("Sensitivity: ", round(sensitivity, 2), "\n")
+cat("Specificity: ", round(specificity, 2), "\n")
+
+# Plot ROC Curve and Calculate AUC
+library(pROC)
+roc_curve <- roc(test_data$LoanApproved, predicted_probabilities)
+
+# Plot the ROC curve
+plot(roc_curve, col = "blue", main = "ROC Curve for Loan Approval Model")
+abline(a = 0, b = 1, lty = 2, col = "red")  # Reference line
+
+# Calculate and print the AUC
+auc_value <- auc(roc_curve)
+cat("AUC:", auc_value, "\n")
+
+```
+
+**Key Observations:**</br>
+
+
+
+## Model 2
+
+### Decision Tree Model 
+
+
+
+**Key Observations:**</br>
+
+# **Overall Analysis of Model Strengths and Limitations **</br>
+# **Conclusion**</br>
+
+1.While age does not significantly impact loan approval or risk, financial factors such as total assets and income play a crucial role, with low-risk applicants typically having higher assets and more varied income. Employment status is a key determinant, as employed individuals tend to have lower risk scores and higher approval rates, while unemployed or self-employed applicants face higher risk and reduced approval chances. Marital status does not appear to have a significant effect on loan approval or risk.
+
+2.
+# **References **</br>
+
+
