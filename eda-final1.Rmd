@@ -122,18 +122,22 @@ for (col in colnames(df)) {
 1.	What are the strongest predictors of loan approval?
 
 ```{r}
-#correlation matrix
+# Load necessary libraries
+library(ggcorrplot)
+
+# Compute the correlation matrix
 cor_matrix <- cor(df[, sapply(df, is.numeric)])
 
-# Melt the correlation matrix for plotting
-melted_cor_matrix <- melt(cor_matrix)
-
-# Correlation heatmap
-ggplot(melted_cor_matrix, aes(Var1, Var2, fill = value)) +
-  geom_tile(color = "black") +
-  scale_fill_gradient2(low = "green", high = "violet", mid = "white", midpoint = 0, limit = c(-1, 1)) +
-  labs(title = "Correlation Heatmap", x = "", y = "") +
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),axis.text.y = element_text(vjust = 0, hjust=1))
+# Generate the correlation heatmap using ggcorrplot
+ggcorrplot(cor_matrix, 
+           method = "square", 
+           lab = TRUE, 
+           lab_size = 3, 
+           colors = c("green", "white", "violet"),
+           title = "Correlation Heatmap",
+           hc.order = TRUE, 
+           type = "lower",
+           outline.color = "black")
 ```
 Annual income,Risk Score, TotalDebtToIncomeRatio, Annual Income and Monthly Income are the highly correlated variables with that of loan approval.
 
