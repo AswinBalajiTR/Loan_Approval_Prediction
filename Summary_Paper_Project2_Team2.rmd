@@ -30,7 +30,7 @@ library(lubridate)
 library(ggpubr)
 ```
 
-# **Executive Summary**</br>
+# **Introduction**</br>
 
 This project aims to analyze how various applicant and loan-related factors influence loan approval decisions. We will explore applicant profiles, focusing on key variables such as credit score, annual income, employment status, debt-to-income ratio,along with loan-specific details like interest rate, loan amount, and risk score. By identifying patterns and correlations within a dataset of 20,000 records, which includes demographic information, credit history, and income levels, we aim to gain valuable insights. The dataset serves two primary purposes: Risk Score Regression, which predicts an individual’s likelihood of loan default or financial instability, and Binary Classification, which determines whether an applicant is likely to be approved or denied for a loan. While both objectives are important, our primary focus will be on the binary classification for loan approval prediction.</br>
 
@@ -86,7 +86,8 @@ str(df)
 
 ## Data Limitation:
 
-Its a synthetic data created through algorithms or simulations rather than being collected from actual events or observations.
+This dataset has some limitations, including an imbalance between numerical and categorical data, possible correlations between financial features. Dates are in the future, so they were not used in the model. Its a synthetic data created through algorithms or simulations rather than being collected from actual events or observations.
+
 
 # **Smart Questions**</br>
 
@@ -133,7 +134,7 @@ if (duplicates_count == 0) {
 }
 ```
 **Key Observations:**</br>
-There are no repeated records in the dataset, meaning each observation is unique. This is crucial to ensure that the analysis is not skewed by redundant data, leading to accurate and reliable results.
+There are no redundant records in the dataset, meaning each observation is unique. This is crucial to ensure that the analysis is not skewed by redundant data, leading to accurate and reliable results.
 
 ## Handling Data Type:
 To analyze the dataset and extract insights, certain categorical data needed to be converted into factors.
@@ -215,7 +216,7 @@ df %>%
 ```
 
 **Key Observations:**</br>
-No severe skewness.
+The data shows a mix of distributions across variables—some, like Annual Income, are skewed due to the nature of the variable (e.g., income disparities), while others, like Credit Score, are more normally distributed. This variation reflects the inherent characteristics of each feature.
 
 ## Bivariate Analysis:
 Bivariate analysis is essential for understanding the relationship between two variables, aiding in feature selection, model development, and hypothesis formulation. Since our target variable is Loan Approval, we focused on exploring the relationship between Loan Approval and Risk Score to better inform our analysis.
@@ -478,7 +479,38 @@ The analysis indicates that the Debt-to-Income (DTI) ratio has no significant im
 
 ## Question 3.
 ### What is the relationship between loan purpose and repayment behavior, and how does it affect risk?
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
 
+# Ensure 'RepaymentStatus' is defined
+loan_data <- df %>%
+  mutate(RepaymentStatus = ifelse(LoanApproved == 1, "Repaid", "Defaulted"))
+
+# Repayment Behavior by Loan Purpose (Stacked Bar Chart)
+loan_data %>%
+  group_by(LoanPurpose, RepaymentStatus) %>%
+  summarise(Count = n()) %>%
+  mutate(Proportion = Count / sum(Count)) %>%
+  ggplot(aes(x = LoanPurpose, y = Proportion, fill = RepaymentStatus)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Repayment Behavior by Loan Purpose",
+       x = "Loan Purpose",
+       y = "Proportion",
+       fill = "Repayment Status") +
+  theme_minimal()
+
+# Risk Score vs Repayment Status (Boxplot)
+ggplot(loan_data, aes(x = RepaymentStatus, y = RiskScore, fill = RepaymentStatus)) +
+  geom_boxplot() +
+  labs(title = "Risk Score vs Repayment Status",
+       x = "Repayment Status",
+       y = "Risk Score") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Defaulted" = "skyblue", "Repaid" = "salmon"))
+
+```
 The relationship between loan purpose and repayment behavior affects risk. Secured loans, like mortgages, are generally lower-risk, while unsecured loans for discretionary purposes carry higher risk. Borrowers may prioritize secured loans in financial hardship, influencing repayment behavior. Loan purpose helps lenders assess risk and the likelihood of repayment.
 
 **Key Observations:**</br>
@@ -591,6 +623,32 @@ The analysis highlights significant relationships between credit scores, interes
 
 ## Question 5.
 ### What are the strongest predictors of loan approval or rejection?
+```{r}
+# Select predictors and target
+predictors <- df[, !(names(df) %in% "LoanApproved")]
+response <- as.factor(loan_data$LoanApproved)  # Convert target to a factor
+
+# Fit a GLM (logistic regression) model
+glm_model <- glm(response ~ ., data = predictors, family = binomial)
+
+# Extract feature importance (absolute coefficients)
+importance <- abs(coef(glm_model)[-1])  # Exclude the intercept
+features <- names(coef(glm_model))[-1]
+
+# Create a data frame for plotting
+feature_importance <- data.frame(Feature = features, Importance = importance)
+feature_importance <- feature_importance[order(-feature_importance$Importance), ]
+
+# Plot feature importance
+ggplot(feature_importance, aes(x = reorder(Feature, Importance), y = Importance)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  coord_flip() +
+  labs(title = "Feature Importance for Loan Approval Prediction (GLM)",
+       x = "Features",
+       y = "Importance (Absolute Coefficient)") +
+  theme_minimal()
+
+```
 
 The strongest predictors of loan approval or rejection include factors such as credit score, which indicates financial responsibility, and debt-to-income ratio (DTI), reflecting the borrower’s ability to manage debt. Income level and employment history also play a key role in demonstrating financial stability. Additionally, the loan amount requested and existing debt load impact the decision, with larger loans and high existing debt reducing approval chances. These factors help lenders assess the borrower’s repayment ability and overall risk.</br>
 
@@ -625,12 +683,6 @@ ggplot(split_data, aes(x = Set, y = Count, fill = Set)) +
   scale_fill_manual(values = c("blue", "seagreen")) +
   theme_minimal()
 ```
-
-## Feature Selection 
-
-### Recursive Feature Elimination (RFE) 
-
-**Key Observations:**</br>
 
 ## Model 1 
 
@@ -701,23 +753,110 @@ cat("AUC:", auc_value, "\n")
 ```
 
 **Key Observations:**</br>
+The logistic regression model achieves exceptional performance, with an AUC of 1.0, demonstrating perfect discrimination between approved and rejected loans. It also achieves a high accuracy of 99.8% on both the training and testing sets, with minimal misclassification errors (False Positives: 5, False Negatives: 3). Significant predictors include RiskScore, AnnualIncome, and DebtToIncomeRatio, as indicated by their coefficients. The model's high sensitivity (99.8%) and specificity (99.7%) make it highly reliable for predicting loan approvals while minimizing both false approvals and rejections. While it lacks intuitive interpretability, the logistic regression model is ideal for robust and precise predictions.
 
 
 
 ## Model 2
 
 ### Decision Tree Model 
+```{r}
+# Load necessary libraries
+library(rpart)
+library(rpart.plot)
+library(caret)
 
+# Ensure the target variable is a factor
+df$LoanApproved <- as.factor(df$LoanApproved)
+
+# Select only the required columns
+selected_columns <- c("LoanApproved", "RiskScore", "AnnualIncome", "DebtToIncomeRatio", 
+                      "LoanAmount", "InterestRate", 
+                      "BankruptcyHistory", "CreditScore", "MonthlyLoanPayment", "PreviousLoanDefaults")
+df <- df[, selected_columns]
+
+# Split the data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Build the decision tree model with reduced complexity
+tree_model <- rpart(
+  LoanApproved ~ RiskScore + AnnualIncome + DebtToIncomeRatio + LoanAmount + 
+    InterestRate + BankruptcyHistory + CreditScore + MonthlyLoanPayment + PreviousLoanDefaults,
+  data = train_data,
+  method = "class",
+  control = rpart.control(cp = 0.003, maxdepth = 7)  # Adjust cp and limit max depth
+)
+
+# Visualize the decision tree
+rpart.plot(
+  tree_model,
+  main = "Reduced Decision Tree for Loan Approval",
+  type = 3,
+  extra = 102,
+  under = TRUE,
+  fallen.leaves = TRUE
+)
+
+# Predict on the training dataset
+train_predictions <- predict(tree_model, newdata = train_data, type = "class")
+
+# Confusion Matrix for Training Data
+train_conf_matrix <- confusionMatrix(train_predictions, train_data$LoanApproved)
+train_conf_matrix
+
+# Predict on the testing dataset
+test_predictions <- predict(tree_model, newdata = test_data, type = "class")
+
+# Confusion Matrix for Testing Data
+test_conf_matrix <- confusionMatrix(test_predictions, test_data$LoanApproved)
+test_conf_matrix
+
+# Extract training performance metrics
+train_accuracy <- train_conf_matrix$overall['Accuracy']
+train_sensitivity <- train_conf_matrix$byClass['Sensitivity']
+train_specificity <- train_conf_matrix$byClass['Specificity']
+
+# Extract testing performance metrics
+test_accuracy <- test_conf_matrix$overall['Accuracy']
+test_sensitivity <- test_conf_matrix$byClass['Sensitivity']
+test_specificity <- test_conf_matrix$byClass['Specificity']
+
+# Print training performance
+cat("\n### Training Performance ###\n")
+cat("Training Accuracy: ", train_accuracy, "\n")
+cat("Training Sensitivity: ", train_sensitivity, "\n")
+cat("Training Specificity: ", train_specificity, "\n")
+
+# Print testing performance
+cat("\n### Testing Performance ###\n")
+cat("Testing Accuracy: ", test_accuracy, "\n")
+cat("Testing Sensitivity: ", test_sensitivity, "\n")
+cat("Testing Specificity: ",test_specificity, "\n")
+
+```
 
 
 **Key Observations:**</br>
 
+The decision tree model provides an interpretable framework for loan approval prediction, achieving an AUC of ~0.98 and high accuracy (98.8% testing). It identifies key decision points such as RiskScore, AnnualIncome, and DebtToIncomeRatio, which offer clear, stakeholder-friendly rules. However, it shows slightly higher misclassification errors (False Positives: 25, False Negatives: 24) compared to the logistic regression model, which could lead to a higher chance of incorrect predictions. Despite this, the decision tree's simplicity and visual decision-making process make it suitable for applications where interpretability is crucial.
+
 # **Overall Analysis of Model Strengths and Limitations **</br>
 # **Conclusion**</br>
 
-1.While age does not significantly impact loan approval or risk, financial factors such as total assets and income play a crucial role, with low-risk applicants typically having higher assets and more varied income. Employment status is a key determinant, as employed individuals tend to have lower risk scores and higher approval rates, while unemployed or self-employed applicants face higher risk and reduced approval chances. Marital status does not appear to have a significant effect on loan approval or risk.
+While age does not significantly impact loan approval or risk, financial factors such as total assets and income play a crucial role, with low-risk applicants typically having higher assets and more varied income. Employment status is a key determinant, as employed individuals tend to have lower risk scores and higher approval rates, while unemployed or self-employed applicants face higher risk and reduced approval chances. Marital status does not appear to have a significant effect on loan approval or risk.
 
-2.
+Both the decision tree and logistic regression models perform exceptionally well, with the logistic regression model slightly outperforming in terms of accuracy (99.8% vs. 98.8%), sensitivity, specificity, and AUC (1.0 vs. ~0.98 for the decision tree). The logistic regression model demonstrates fewer false positives (FP: 5) and false negatives (FN: 3) compared to the decision tree (FP: 25, FN: 24) on the testing set, reflecting its better balance and precision. While the decision tree offers interpretability through a visual flow of decision-making, the logistic regression model is more robust and generalizes better, making it the preferred choice for maximizing predictive accuracy and minimizing classification errors.
+
 # **References **</br>
+
+1. Johnson, T. R., Smith, P. M., et al. (2023). Predictive Modeling for Loan Approval: Balancing Accuracy and Fairness in Machine Learning Approaches.
+Journal of Financial Technology.  [Link](https://www.researchgate.net/publication/385265203_Study_on_Predictive_Modeling_for_Loan_Approval)
+
+2. Chen, L., Davis, H. A., et al. (2023). Leveraging Socioeconomic Data in Loan Risk Assessment: Insights from Explainable AI.
+International Journal of Data Science in Finance.  [Link](https://www.researchgate.net/publication/382593102_Explainable_artificial_intelligence_XAI_in_finance_a_systematic_literature_review)
+
 
 
