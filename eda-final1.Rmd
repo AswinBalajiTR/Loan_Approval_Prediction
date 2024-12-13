@@ -662,5 +662,7 @@ train_conf_matrix
 # Predict on the testing dataset
 test_predictions <- predict(tree_model, newdata = test_data, type = "class")
 
-
+# Confusion Matrix for Training Data
+train_conf_matrix <- confusionMatrix(train_predictions, train_data$LoanApproved)
+train_conf_matrix
 ```
