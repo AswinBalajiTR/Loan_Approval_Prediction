@@ -586,9 +586,7 @@ cat("Specificity: ", round(specificity, 2), "\n")
 
 predicted_probabilities <- predict(logistic_model, newdata = test_data, type = "response")
 
-# Step 4: Convert probabilities to binary outcomes
-predicted_classes <- ifelse(predicted_probabilities > 0.5, 1, 0)
-predicted_classes <- factor(predicted_classes, levels = levels(test_data$LoanApproved))
+
 
 # Step 5: Confusion Matrix
 library(caret)
