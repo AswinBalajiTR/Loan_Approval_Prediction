@@ -662,14 +662,29 @@ train_conf_matrix
 # Predict on the testing dataset
 test_predictions <- predict(tree_model, newdata = test_data, type = "class")
 
-# Confusion Matrix for Training Data
-train_conf_matrix <- confusionMatrix(train_predictions, train_data$LoanApproved)
-train_conf_matrix
-
-# Predict on the testing dataset
-test_predictions <- predict(tree_model, newdata = test_data, type = "class")
-
 # Confusion Matrix for Testing Data
 test_conf_matrix <- confusionMatrix(test_predictions, test_data$LoanApproved)
 test_conf_matrix
+
+# Extract training performance metrics
+train_accuracy <- train_conf_matrix$overall['Accuracy']
+train_sensitivity <- train_conf_matrix$byClass['Sensitivity']
+train_specificity <- train_conf_matrix$byClass['Specificity']
+
+# Extract testing performance metrics
+test_accuracy <- test_conf_matrix$overall['Accuracy']
+test_sensitivity <- test_conf_matrix$byClass['Sensitivity']
+test_specificity <- test_conf_matrix$byClass['Specificity']
+
+# Print training performance
+cat("\n### Training Performance ###\n")
+cat("Training Accuracy: ", train_accuracy, "\n")
+cat("Training Sensitivity: ", train_sensitivity, "\n")
+cat("Training Specificity: ", train_specificity, "\n")
+
+# Print testing performance
+cat("\n### Testing Performance ###\n")
+cat("Testing Accuracy: ", test_accuracy, "\n")
+cat("Testing Sensitivity: ", test_sensitivity, "\n")
+cat("Testing Specificity: ",test_specificity, "\n")
 ```
