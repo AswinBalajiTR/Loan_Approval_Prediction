@@ -1,0 +1,666 @@
+---
+title: "**Loan Approval Prediction and Analysis**"
+author: "Aswin Balaji Thippa Ramesh,Abilasha Singh, Lixing Pan"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    number_sections: false
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+# Some of common RMD options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis'/'markup',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+knitr::opts_chunk$set(warning = F, message = F)
+# Can globally set option for number display format.
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+library(dplyr)
+library(ezids)
+library(ggplot2)
+library(tidyr)
+library(reshape2)
+library(gridExtra)
+library(ggpubr)
+library(dplyr)
+library(caTools)
+library(caret)
+library(randomForest)
+library(ROCR)
+```
+# **Data Loading and Basic Exploration:**
+
+```{r}
+df=read.csv("Loan.csv")
+
+#head
+head(df)
+
+#tail
+tail(df)
+```
+# **Data Types, Schema and Summary:**
+```{r}
+#Shape
+cat("Row Count :",dim(df)[1],", Column Count :",dim(df)[2],'\n\n')
+
+#Structure of the data
+str(df)
+cat('\n\n')
+
+
+#Summary Statistics  
+summary(df)
+cat('\n\n')
+
+#Unique value counts in every columns
+for (col in colnames(df)){
+    cat(col, ": ", length(unique(df[[col]])), "\n")
+}
+```
+
+# **Checking Data Quality:**
+```{r}
+#Converting relevant variables as factor
+df$EmploymentStatus=as.factor(df$EmploymentStatus)
+df$EducationLevel=as.factor(df$EducationLevel)
+df$MaritalStatus=as.factor(df$MaritalStatus)
+df$HomeOwnershipStatus=as.factor(df$HomeOwnershipStatus)
+df$LoanPurpose=as.factor(df$LoanPurpose)
+df$BankruptcyHistory <- as.factor(df$BankruptcyHistory)
+
+str(df)
+```
+
+```{r}
+#missing values in every columns
+missing_summary <- colSums(is.na(df))
+print(missing_summary)
+```
+There are no missing values in the data.
+
+```{r}
+#Checking for duplicates
+duplicates <- df[duplicated(df), ]
+print(duplicates)
+```
+No duplicate rows are present in the data
+
+```{r}
+outliers <- lapply(df, function(column) {
+  if (is.numeric(column)) {
+    Q1 <- quantile(column, 0.25)
+    Q3 <- quantile(column, 0.75)
+    IQR <- Q3 - Q1
+    column[column < (Q1 - 1.5 * IQR) | column > (Q3 + 1.5 * IQR)]
+  }
+})
+```
+
+```{r}
+for (col in colnames(df)) {
+  if (is.numeric(df[[col]])) {
+    boxplot(df[[col]], main = paste("Boxplot of", col))
+}}
+```
+# **Variable Analysis and Relationship**
+
+1.	What are the strongest predictors of loan approval?
+
+```{r}
+#correlation matrix
+cor_matrix <- cor(df[, sapply(df, is.numeric)])
+
+# Melt the correlation matrix for plotting
+melted_cor_matrix <- melt(cor_matrix)
+
+# Correlation heatmap
+ggplot(melted_cor_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "green", high = "violet", mid = "white", midpoint = 0, limit = c(-1, 1)) +
+  labs(title = "Correlation Heatmap", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),axis.text.y = element_text(vjust = 0, hjust=1))
+```
+Annual income,Risk Score, TotalDebtToIncomeRatio, Annual Income and Monthly Income are the highly correlated variables with that of loan approval.
+
+```{r}
+# Function to identify and drop multicollinear columns
+drop_multicollinear <- function(df, threshold = 0.85) {
+  # Select only numeric columns
+  numeric_data <- df %>% select_if(is.numeric)
+  
+  # Compute correlation matrix
+  correlation_matrix <- cor(numeric_data, use = "pairwise.complete.obs")
+  
+  # Find highly correlated features
+  high_corr_indices <- findCorrelation(correlation_matrix, cutoff = threshold)
+  columns_to_drop <- colnames(numeric_data)[high_corr_indices]
+  
+  print(paste("Dropping multicollinear columns:", paste(columns_to_drop, collapse = ", ")))
+  
+  # Drop multicollinear columns
+  df <- df %>% select(-all_of(columns_to_drop))
+  return(df)
+}
+
+# Apply the function
+df <- drop_multicollinear(df, threshold = 0.85)
+df <- df %>% select(-TotalDebtToIncomeRatio)
+
+```
+
+2.	How does debt-to-income ratio impact loan approval, interest rates, and risk scores?
+
+```{r}
+# Ensure LoanApproved is a factor
+# Create a new dataframe for analysis
+df_analysis <- df
+
+# Ensure LoanApproved in the new dataframe is labeled as "Rejected" and "Approved"
+df_analysis$LoanApproved <- factor(df_analysis$LoanApproved, labels = c("Rejected", "Approved"))
+
+# Bin Debt-to-Income Ratio for grouping in the new dataframe
+df_analysis$DebtToIncomeBin <- cut(df_analysis$DebtToIncomeRatio, 
+                                   breaks = c(-Inf, 0.2, 0.4, 0.6, 0.8, Inf),
+                                   labels = c("Very Low", "Low", "Moderate", "High", "Very High"))
+
+# Analysis and Visualizations
+## 1. Impact on Loan Approval
+library(ggplot2)
+ggplot(df_analysis, aes(x = DebtToIncomeBin, fill = LoanApproved)) +
+  geom_bar() +
+  labs(title = "Loan Approval by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Proportion of Loan Approvals") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Rejected" = "pink", "Approved" = "darkblue"))
+
+# Model 1: Debt-to-Income Ratio vs Loan Approval
+loan_approval_model <- glm(LoanApproved ~ DebtToIncomeRatio, data = df_analysis, family = "binomial")
+approval_summary <- summary(loan_approval_model)
+approval_coef <- approval_summary$coefficients[2, 1]
+approval_p <- approval_summary$coefficients[2, 4]
+
+# Loan Approval Proof
+cat("\n1. Loan Approval:\n")
+print(approval_summary)
+if (approval_p < 0.05) {
+  cat("Conclusion: Debt-to-Income Ratio negatively affects loan approval (coefficient =", round(approval_coef, 2), 
+      ", p =", round(approval_p, 5), "). Higher DTI reduces loan approval chances.\n")
+} else {
+  cat("Conclusion: Debt-to-Income Ratio does not significantly affect loan approval (p =", round(approval_p, 5), ").\n")
+}
+
+## Loan Approval and Debt-to-Income Ratio
+approval_test <- chisq.test(table(df_analysis$LoanApproved, df_analysis$DebtToIncomeBin))
+cat("Chi-squared Test for Loan Approval:\n")
+print(approval_test)
+
+if (approval_test$p.value < 0.05) {
+  cat("The Chi-Square Test indicates a significant relationship between debt-to-income ratio and loan approval.\n")
+} else {
+  cat("The Chi-Square Test does not indicate a significant relationship between debt-to-income ratio and loan approval.\n")
+}
+
+## 2. Impact on Interest Rates
+ggplot(df_analysis, aes(x = DebtToIncomeBin, y = InterestRate, fill = DebtToIncomeBin)) +
+  geom_boxplot() +
+  labs(title = "Interest Rates by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Interest Rate") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Model 2: Debt-to-Income Ratio vs Interest Rates
+interest_rate_model <- lm(InterestRate ~ DebtToIncomeRatio, data = df_analysis)
+interest_summary <- summary(interest_rate_model)
+interest_coef <- interest_summary$coefficients[2, 1]
+interest_p <- interest_summary$coefficients[2, 4]
+
+
+# Interest Rates Proof
+cat("\n2. Interest Rates:\n")
+print(interest_summary)
+if (interest_p < 0.05) {
+  cat("Conclusion: Higher Debt-to-Income Ratio is associated with higher interest rates (coefficient =", round(interest_coef, 2), 
+      ", p =", round(interest_p, 5), ").\n")
+} else {
+  cat("Conclusion: Debt-to-Income Ratio does not significantly affect interest rates (p =", round(interest_p, 5), ").\n")
+}
+
+## 3. Impact on Risk Scores
+ggplot(df_analysis, aes(x = DebtToIncomeBin, y = RiskScore, fill = DebtToIncomeBin)) +
+  geom_boxplot() +
+  labs(title = "Risk Scores by Debt-to-Income Ratio",
+       x = "Debt-to-Income Ratio (Binned)",
+       y = "Risk Score") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Model 3: Debt-to-Income Ratio vs Risk Scores
+risk_score_model <- lm(RiskScore ~ DebtToIncomeRatio, data = df_analysis)
+risk_summary <- summary(risk_score_model)
+risk_coef <- risk_summary$coefficients[2, 1]
+risk_p <- risk_summary$coefficients[2, 4]
+
+# Risk Scores Proof
+cat("\n3. Risk Scores:\n")
+print(risk_summary)
+if (risk_p < 0.05) {
+  cat("Conclusion: Higher Debt-to-Income Ratio is associated with higher risk scores (coefficient =", round(risk_coef, 2), 
+      ", p =", round(risk_p, 5), ").\n")
+} else {
+  cat("Conclusion: Debt-to-Income Ratio does not significantly affect risk scores (p =", round(risk_p, 5), ").\n")
+}
+
+```
+
+3.	What are the financial and demographic profiles of high-risk versus low-risk applicants?
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+
+# Categorize Risk into Low, Medium, and High groups based on quantiles
+df$RiskGroup <- cut(
+  df$RiskScore,
+  breaks = quantile(df$RiskScore, probs = c(0, 0.4, 1), na.rm = TRUE),
+  labels = c("Low Risk", "High Risk"),
+  include.lowest = TRUE
+)
+
+# Convert RiskGroup to a factor
+df$RiskGroup <- factor(df$RiskGroup, levels = c("Low Risk", "High Risk"))
+
+
+# Age: Violin Plot
+ggplot(df, aes(x = RiskGroup, y = Age, fill = RiskGroup)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, position = position_dodge(0.9), color = "black", alpha = 0.6) +
+  labs(title = "Age Distribution by Risk Group", x = "Risk Group", y = "Age") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Net Worth (Assets): Scatter Plot with Smoothing
+ggplot(df, aes(x = RiskGroup, y = TotalAssets, color = RiskGroup)) +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  geom_boxplot(width = 0.1, alpha = 0.7, outlier.shape = NA) +
+  labs(title = "Total Assets by Risk Group", x = "Risk Group", y = "Net Worth") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Income: Density Plot
+ggplot(df, aes(x = AnnualIncome, fill = RiskGroup)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Income Distribution by Risk Group", x = "Annual Income", y = "Density") +
+  theme_minimal() +
+  scale_x_continuous(labels = scales::dollar_format())
+
+## Employment Status: Mosaic Plot
+ggplot(df, aes(x = RiskGroup, fill = EmploymentStatus)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Employment Status Proportion by Risk Group", x = "Risk Group", y = "Proportion") +
+  theme_minimal()
+
+## Marital Status: Grouped Bar Chart
+ggplot(df, aes(x = RiskGroup, fill = MaritalStatus)) +
+  geom_bar(position = "dodge", alpha = 0.8) +
+  labs(title = "Marital Status Distribution by Risk Group", x = "Risk Group", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+# Plot RiskScore vs Employment Status (categorical)
+ggplot(df, aes(x = EmploymentStatus, y = RiskScore, color = EmploymentStatus)) +
+  geom_boxplot() +
+  labs(title = "Risk Score by Employment Status", x = "Employment Status", y = "Risk Score") +
+  theme_minimal()
+
+# Print conclusions in R
+cat("1. Age: Low-risk applicants tend to be older, while high-risk applicants are generally younger.\n")
+cat("2. Net Worth: Low-risk applicants have significantly higher net worth compared to high-risk applicants, with greater variability in the low-risk group.\n")
+cat("3. Income: Income distribution for low-risk applicants is skewed higher compared to high-risk applicants, who predominantly have lower incomes.\n")
+cat("4. Employment Status: High-risk applicants have a slightly higher proportion of unemployment compared to low-risk applicants, while most are employed in both groups.\n")
+cat("5. Marital Status: Low-risk applicants are predominantly married, while high-risk applicants have higher proportions of single and divorced individuals.\n")
+
+
+```
+
+4.	How does credit score impact interest rates, loan approval, and loan amount?
+
+```{r}
+
+# 1. Credit Score vs Interest Rate
+cor_test <- cor.test(df$CreditScore, df$InterestRate)
+# Visualization: Credit Score vs Interest Rate with Conditional Coloring
+ggplot(df, aes(x = CreditScore, y = InterestRate)) +
+  geom_point(aes(color = InterestRate), alpha = 0.6, size = 2) +  # Points colored by Interest Rate
+  scale_color_gradient(low = "blue", high = "red") +  # Gradient color for emphasis
+  geom_smooth(method = "lm", color = "black", linetype = "dashed", se = TRUE) +  # Regression line
+  labs(
+    title = paste("Credit Score vs Interest Rate\n",
+                  "Correlation: ", round(cor_test$estimate, 2),
+                  "| p-value:", round(cor_test$p.value, 5)),
+    x = "Credit Score",
+    y = "Interest Rate",
+    color = "Interest Rate"
+  ) +
+  theme_minimal()
+
+interest_rate_model <- lm(InterestRate ~ CreditScore, data = df)
+interest_summary <- summary(interest_rate_model)
+interest_coef <- interest_summary$coefficients[2, 1]
+interest_p <- interest_summary$coefficients[2, 4]
+
+cat("\n1. Credit Score and Interest Rates:\n")
+print(interest_summary)
+if (interest_p < 0.05) {
+  cat("Conclusion: Higher credit scores are associated with lower interest rates (coefficient =", round(interest_coef, 2), 
+      ", p =", round(interest_p, 5), ").\n")
+} else {
+  cat("Conclusion: Credit score does not significantly affect interest rates (p =", round(interest_p, 5), ").\n")
+}
+
+# 2. Credit Score vs Loan Approval
+t_test_approval <- t.test(CreditScore ~ LoanApproved, data = df)
+# Visualization: Credit Score by Loan Approval
+ggplot(df_analysis, aes(x = LoanApproved, y = CreditScore, fill = LoanApproved)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(title = paste("Credit Score by Loan Approval\n",
+                     "p-value:", round(t_test_approval$p.value, 5)),
+       x = "Loan Approval Status", y = "Credit Score") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+loan_approval_model <- glm(LoanApproved ~ CreditScore, data = df, family = "binomial")
+approval_summary <- summary(loan_approval_model)
+approval_coef <- approval_summary$coefficients[2, 1]
+approval_p <- approval_summary$coefficients[2, 4]
+
+# Loan Approval Proof
+cat("\n2. Credit Score and Loan Approval:\n")
+print(approval_summary)
+if (approval_p < 0.05) {
+  cat("Conclusion: Higher credit scores increase the likelihood of loan approval (coefficient =", round(approval_coef, 2), 
+      ", p =", round(approval_p, 5), ").\n")
+} else {
+  cat("Conclusion: Credit score does not significantly affect loan approval (p =", round(approval_p, 5), ").\n")
+}
+
+
+# 3. Credit Score vs Loan Amount
+
+# Statistical Test: Correlation
+cor_loan <- cor.test(df$CreditScore, df$LoanAmount)
+
+# Visualization: Credit Score vs Loan Amount
+ggplot(df, aes(x = CreditScore, y = LoanAmount)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_smooth(method = "lm", color = "red", se = TRUE) +
+  labs(title = paste("Credit Score vs Loan Amount\n",
+                     "Correlation: ", round(cor_loan$estimate, 2), 
+                     "| p-value:", round(cor_loan$p.value, 5)),
+       x = "Credit Score", y = "Loan Amount") +
+  theme_minimal()
+
+loan_amount_model <- lm(LoanAmount ~ CreditScore, data = df)
+loan_amount_summary <- summary(loan_amount_model)
+loan_amount_coef <- loan_amount_summary$coefficients[2, 1]
+loan_amount_p <- loan_amount_summary$coefficients[2, 4]
+
+cat("\n3. Credit Score and Loan Amount:\n")
+print(loan_amount_summary)
+if (loan_amount_p < 0.05) {
+  cat("Conclusion: Higher credit scores are associated with higher loan amounts (coefficient =", round(loan_amount_coef, 2), 
+      ", p =", round(loan_amount_p, 5), ").\n")
+} else {
+  cat("Conclusion: Credit score does not significantly affect loan amounts (p =", round(loan_amount_p, 5), ").\n")
+}
+
+```
+
+5.	What is the relationship between loan purpose and repayment behavior, and how does it affect risk?
+
+```{r}
+# Loan Purpose vs Repayment Behavior
+# Visualizing repayment behavior (PaymentHistory) across loan purposes
+ggplot(df, aes(x = LoanPurpose, fill = PaymentHistory)) +
+  geom_bar(position = "fill", alpha = 0.8) +
+  labs(title = "Repayment Behavior by Loan Purpose",
+       x = "Loan Purpose", y = "Proportion",
+       fill = "Payment History") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set3")
+
+# Statistical Test: Loan Purpose and Repayment Behavior
+payment_table <- table(df$LoanPurpose, df$PaymentHistory)
+chi_test_payment <- chisq.test(payment_table)
+cat("Chi-square test result for Loan Purpose and Repayment Behavior:\n")
+print(chi_test_payment)
+
+# Conclusion for Repayment Behavior
+if (chi_test_payment$p.value < 0.05) {
+  cat("Conclusion: There is a significant association between Loan Purpose and Repayment Behavior (p =", chi_test_payment$p.value, ").\n")
+} else {
+  cat("Conclusion: There is no significant association between Loan Purpose and Repayment Behavior (p =", chi_test_payment$p.value, ").\n")
+}
+
+# Loan Purpose vs Risk (Risk Score)
+# Visualizing risk score distribution across loan purposes
+ggplot(df, aes(x = LoanPurpose, y = RiskScore, fill = LoanPurpose)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, color = "black", alpha = 0.6) +
+  labs(title = "Risk Score by Loan Purpose",
+       x = "Loan Purpose", y = "Risk Score") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set2")
+
+# Statistical Test: Loan Purpose and Risk Score
+anova_risk <- aov(RiskScore ~ LoanPurpose, data = df)
+cat("ANOVA result for Risk Score by Loan Purpose:\n")
+summary(anova_risk)
+
+# Conclusion for Risk
+if (summary(anova_risk)[[1]][["Pr(>F)"]][1] < 0.05) {
+  cat("Conclusion: Risk Score differs significantly across Loan Purposes (p =", summary(anova_risk)[[1]][["Pr(>F)"]][1], ").\n")
+} else {
+  cat("Conclusion: Risk Score does not differ significantly across Loan Purposes (p =", summary(anova_risk)[[1]][["Pr(>F)"]][1], ").\n")
+}
+
+# Summarizing Risk and Repayment Behavior by Loan Purpose
+summary_table <- df %>%
+  group_by(LoanPurpose) %>%
+  summarise(
+    Avg_RiskScore = mean(RiskScore, na.rm = TRUE),
+    Proportion_Defaults = mean(PreviousLoanDefaults == "Yes", na.rm = TRUE),
+    Count = n()
+  )
+print(summary_table)
+
+# Visualization: Combined view of Risk Score and Defaults by Loan Purpose
+summary_table_long <- summary_table %>%
+  pivot_longer(cols = c(Avg_RiskScore, Proportion_Defaults), names_to = "Metric", values_to = "Value")
+
+ggplot(summary_table_long, aes(x = LoanPurpose, y = Value, fill = Metric)) +
+  geom_col(position = "dodge") +
+  labs(title = "Risk Score and Default Rates by Loan Purpose",
+       x = "Loan Purpose", y = "Value",
+       fill = "Metric") +
+  scale_fill_brewer(palette = "Pastel1") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+# Split data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Feature Selection: Recursive Feature Elimination (RFE)
+set.seed(123)
+control <- rfeControl(functions = rfFuncs, method = "cv", number = 5)
+rfe_results <- rfe(train_data[, -which(names(train_data) == "LoanApproved")], 
+                   train_data$LoanApproved, 
+                   sizes = c(1:15), 
+                   rfeControl = control)
+print(rfe_results)
+
+# Best features
+best_features <- predictors(rfe_results)
+cat("Best features for the model: ", paste(best_features, collapse = ", "), "\n")
+```
+
+```{r}
+# Ensure the target variable is a factor
+df$LoanApproved <- as.factor(df$LoanApproved)
+
+# Select only the columns needed for the model, including the target variable
+selected_columns <- c("LoanApproved", "RiskScore", "AnnualIncome", "DebtToIncomeRatio", 
+                      "LoanAmount", "InterestRate","BankruptcyHistory", "CreditScore", "MonthlyLoanPayment", "PreviousLoanDefaults")
+
+df <- df[, selected_columns]
+
+# Split the data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Define the formula for the logistic regression model
+formula <- LoanApproved ~ RiskScore + AnnualIncome + DebtToIncomeRatio + LoanAmount + + InterestRate + BankruptcyHistory + CreditScore + MonthlyLoanPayment + PreviousLoanDefaults
+# Build the logistic regression model on the training data
+logistic_model <- glm(formula, data = train_data, family = "binomial")
+
+# Summarize the model
+summary(logistic_model)
+
+
+# Predict probabilities on the test dataset
+predicted_probabilities <- predict(logistic_model, newdata = test_data, type = "response")
+
+# Convert probabilities to binary outcomes (threshold = 0.5)
+predicted_classes <- ifelse(predicted_probabilities > 0.5, "1", "0")
+
+# Ensure the predicted classes and actual values have the same factor levels
+predicted_classes <- factor(predicted_classes, levels = levels(test_data$LoanApproved))
+
+# Create a confusion matrix
+conf_matrix <- confusionMatrix(predicted_classes, test_data$LoanApproved)
+
+# Print the confusion matrix and performance metrics
+print(conf_matrix)
+
+# Extract performance metrics
+accuracy <- conf_matrix$overall['Accuracy']
+sensitivity <- conf_matrix$byClass['Sensitivity']
+specificity <- conf_matrix$byClass['Specificity']
+
+# Print performance summary
+cat("\n### Logistic Regression Model Evaluation ###\n")
+cat("Accuracy: ", round(accuracy, 2), "\n")
+cat("Sensitivity: ", round(sensitivity, 2), "\n")
+cat("Specificity: ", round(specificity, 2), "\n")
+
+
+predicted_probabilities <- predict(logistic_model, newdata = test_data, type = "response")
+
+# Step 4: Convert probabilities to binary outcomes
+predicted_classes <- ifelse(predicted_probabilities > 0.5, 1, 0)
+predicted_classes <- factor(predicted_classes, levels = levels(test_data$LoanApproved))
+
+# Step 5: Confusion Matrix
+library(caret)
+conf_matrix <- confusionMatrix(predicted_classes,test_data$LoanApproved)
+
+# Print the confusion matrix and performance metrics
+print(conf_matrix)
+
+# Step 6: Plot ROC Curve and Calculate AUC
+library(pROC)
+roc_curve <- roc(test_data$LoanApproved, predicted_probabilities)
+
+# Plot the ROC curve
+plot(roc_curve, col = "blue", main = "ROC Curve for Loan Approval Model")
+abline(a = 0, b = 1, lty = 2, col = "red")  # Reference line
+
+# Calculate and print the AUC
+auc_value <- auc(roc_curve)
+cat("AUC:", auc_value, "\n")
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(rpart)
+library(rpart.plot)
+library(caret)
+
+# Ensure the target variable is a factor
+df$LoanApproved <- as.factor(df$LoanApproved)
+
+# Select only the required columns
+selected_columns <- c("LoanApproved", "RiskScore", "AnnualIncome", "DebtToIncomeRatio", 
+                      "LoanAmount", "InterestRate", 
+                      "BankruptcyHistory", "CreditScore", "MonthlyLoanPayment", "PreviousLoanDefaults")
+df <- df[, selected_columns]
+
+# Split the data into training and testing sets (80-20 split)
+set.seed(123) # For reproducibility
+train_index <- createDataPartition(df$LoanApproved, p = 0.8, list = FALSE)
+train_data <- df[train_index, ]
+test_data <- df[-train_index, ]
+
+# Build the decision tree model with reduced complexity
+tree_model <- rpart(
+  LoanApproved ~ RiskScore + AnnualIncome + DebtToIncomeRatio + LoanAmount + 
+    InterestRate + BankruptcyHistory + CreditScore + MonthlyLoanPayment + PreviousLoanDefaults,
+  data = train_data,
+  method = "class",
+  control = rpart.control(cp = 0.003, maxdepth = 7)  # Adjust cp and limit max depth
+)
+
+# Visualize the decision tree
+rpart.plot(
+  tree_model,
+  main = "Reduced Decision Tree for Loan Approval",
+  type = 3,
+  extra = 102,
+  under = TRUE,
+  fallen.leaves = TRUE
+)
+
+# Predict on the training dataset
+train_predictions <- predict(tree_model, newdata = train_data, type = "class")
+
+# Confusion Matrix for Training Data
+train_conf_matrix <- confusionMatrix(train_predictions, train_data$LoanApproved)
+train_conf_matrix
+
+# Predict on the testing dataset
+test_predictions <- predict(tree_model, newdata = test_data, type = "class")
+
+
+```
